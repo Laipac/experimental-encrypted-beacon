@@ -52,3 +52,4 @@ Temporary Items
 *.hex
 *.map
 *.bin
+*.out

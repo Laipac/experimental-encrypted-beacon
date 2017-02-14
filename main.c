@@ -50,8 +50,10 @@
 #include "ble_hci.h"
 #include "ble_advdata.h"
 #include "ble_advertising.h"
-#include "nrf_nvic.h"
 #include "nrf_delay.h"
+
+#include "radio_notify.h"
+#include "secure_scan.h"
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT  1                                          /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -141,53 +143,6 @@ static uint8_t m_beacon_uuid[APP_AES_LENGTH] =
 };
 static uint32_t m_counter_ticks;
 static void advertising_reinit(void);
-/**@brief Function for the AES128 encryption of the 16-byte UUID.
- * @details Use the built-in h/w encryption engine.
- * 
- * @param[in] p_data  pointer to the 16-byte UUID array
- * @param[in] p_key   pointer to a 16-byte key array
- * @param[out] p_out  pointer to the encrypted 16-byte UUID array
- * @param[in] counter new counter value. Should be incrementing...
- */
-static void encrypt_128bit_uuid (uint8_t *p_data, uint8_t *p_key, uint8_t *p_out, uint32_t counter)
-{
-	nrf_ecb_hal_data_t aes_struct;
-	uint8_t aes_data[APP_AES_LENGTH];
-	//uint8_t aes_data_decrypted[APP_AES_LENGTH];
-	
-	//Initializing arrays
-	memset (&aes_struct, 0, sizeof(aes_struct));
-	memset (aes_data, 0, sizeof(aes_data));
-
-	//Initializing key
-	for (int i = 0; i < APP_AES_LENGTH; i++)
-	{
-		aes_struct.key[i] = p_key[i];
-	}
-
-	//Initializing nouncence
-	memset (aes_struct.cleartext, 0xaa, sizeof(aes_struct.cleartext)); //todo: use more random data
-	
-	// Add counter
-	//aes_struct.cleartext[0] += counter;
-	memcpy(&aes_struct.cleartext[0], &counter, sizeof(counter));
-	
-	//Creating chipertext
-	sd_ecb_block_encrypt(&aes_struct);  
-
-	//Encrypt -> XOR chipertext with p_data:
-	for (int i = 0; i < APP_AES_LENGTH; i++)
-	{  
-		aes_data[i] = p_data [i] ^ aes_struct.ciphertext[i];
-	}
-
-	//Test dncrypt -> XOR chipertext with encrypted data:
-	//for (int i = 0; i < APP_AES_LENGTH; i++)
-	//{  
-		//aes_data_decrypted [i] = aes_data [i] ^ aes_struct.ciphertext[i];
-	//}	
-	memcpy (p_out, aes_data, APP_AES_LENGTH);
-}
                                    
 /**@brief Callback function for asserts in the SoftDevice.
  *
@@ -619,17 +574,14 @@ static void advertising_reinit(void)
     uint32_t      err_code;
     ble_advdata_t advdata;  // Struct containing advertising parameters
 	uint32_t company_id = 0x0059;
-	uint32_t counter = 0x7c845f92;
-	//uint32_t counter = 0xfffffff0;
-	//static uint32_t m_counter_ticks = 0;
-	uint8_t       flags = BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
+	uint8_t  flags = BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
 
     ble_advdata_manuf_data_t        manuf_data; // Variable to hold manufacturer specific data
     //uint8_t data[]                      = "DataSome!"; // Our data to adverise
     manuf_data.company_identifier       = company_id; // Nordics company ID
     //manuf_data.data.p_data              = data;     
     //manuf_data.data.size                = sizeof(data);
-	encrypt_128bit_uuid(m_beacon_uuid, m_aes128_key, &m_beacon_info[2], counter + m_counter_ticks);
+	encrypt_128bit_uuid(m_beacon_uuid, m_aes128_key, &m_beacon_info[2], m_counter_ticks);
 	memcpy(&m_beacon_info[18], &m_counter_ticks, sizeof(m_counter_ticks));
 	m_counter_ticks++;
 	manuf_data.data.p_data = (uint8_t *) m_beacon_info;
@@ -672,41 +624,12 @@ static void buttons_leds_init(bool * p_erase_bonds)
     *p_erase_bonds = (startup_event == BSP_EVENT_CLEAR_BONDING_DATA);
 }
 
-
 /**@brief Function for the Power manager.
  */
 static void power_manage(void)
 {
     uint32_t err_code = sd_app_evt_wait();
     APP_ERROR_CHECK(err_code);
-}
-
-/**@brief Function for initializing Radio Notification Software Interrupts.
- */
-uint32_t radio_notification_init(uint32_t irq_priority, uint8_t notification_type, uint8_t notification_distance)
-{
-    uint32_t err_code;
-
-    err_code = sd_nvic_ClearPendingIRQ(SWI1_IRQn);
-    if (err_code != NRF_SUCCESS)
-    {
-        return err_code;
-    }
-
-    err_code = sd_nvic_SetPriority(SWI1_IRQn, irq_priority);
-    if (err_code != NRF_SUCCESS)
-    {
-        return err_code;
-    }
-
-    err_code = sd_nvic_EnableIRQ(SWI1_IRQn);
-    if (err_code != NRF_SUCCESS)
-    {
-        return err_code;
-    }
-
-    // Configure the event
-    return sd_radio_notification_cfg_set(notification_type, notification_distance);
 }
 
 /**@brief Software interrupt 1 IRQ Handler, handles radio notification interrupts.
