@@ -1,0 +1,20 @@
+# Config file version number
+vers=s-beacon-v1.0.0
+
+# Beacon config parameters
+
+# beacon related parameters
+# 6-byte device id
+be01=d2b547436202
+# 16-byte UUID
+be02=0112233445566778899aabbccddeeff0
+# enable scan (1) or disable scan (0)
+be03=1
+# encryption suppport (1) or no encryption (0)
+be04=1
+# encryption key
+be05=3112233445566778899aabbccddeeff1
+# advertise interval
+be06=80
+# Transmit power (dBm)
+be07=0

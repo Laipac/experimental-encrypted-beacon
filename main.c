@@ -31,6 +31,7 @@
 #include "nordic_common.h"
 #include "nrf.h"
 #include "app_error.h"
+#include "app_uart.h"
 #include "ble.h"
 #include "ble_hci.h"
 #include "ble_srv_common.h"
@@ -51,9 +52,17 @@
 #include "ble_advdata.h"
 #include "ble_advertising.h"
 #include "nrf_delay.h"
+#include "SEGGER_RTT.h"
 
+#include "atcmd.h"
 #include "radio_notify.h"
 #include "secure_scan.h"
+#include "pstore.h"
+#include "config_hdlr.h"
+#include "uart_reply.h"
+
+#define UART_TX_BUF_SIZE        256                             /**< UART TX buffer size. */
+#define UART_RX_BUF_SIZE        256                             /**< UART RX buffer size. */
 
 #define IS_SRVC_CHANGED_CHARACT_PRESENT  1                                          /**< Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 
@@ -94,24 +103,12 @@
 #define APP_COMPANY_IDENTIFIER          0x0059                            /**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
 #define APP_MAJOR_VALUE                 0x01, 0x02                        /**< Major value used to identify Beacons. */ 
 #define APP_MINOR_VALUE                 0x03, 0x04                        /**< Minor value used to identify Beacons. */ 
-#define APP_BEACON_UUID                 0x01, 0x12, 0x23, 0x34, \
-                                        0x45, 0x56, 0x67, 0x78, \
-                                        0x89, 0x9a, 0xab, 0xbc, \
-                                        0xcd, 0xde, 0xef, 0xf0            /**< Proprietary UUID for Beacon. */
-#define APP_BEACON_UUID2                0x01, 0x12, 0x23, 0x34, \
-                                        0x45, 0x56, 0x67, 0x78, \
-                                        0x89, 0x9a, 0xab, 0xbc, \
-                                        0xcd, 0xde, 0xef, 0xf1            /**< Proprietary UUID for Beacon. */
+#define APP_BEACON_UUID                 0x00, 0x00, 0x00, 0x00, \
+                                        0x00, 0x00, 0x00, 0x00, \
+                                        0x00, 0x00, 0x00, 0x00, \
+                                        0x00, 0x00, 0x00, 0x00            /**< Proprietary UUID for Beacon. */
 										
-#define APP_AES_LENGTH          0x10                              /**< Total length for AES encryption. */
-#define APP_AES128_KEY                  0x31, 0x12, 0x23, 0x34, \
-                                        0x45, 0x56, 0x67, 0x78, \
-                                        0x89, 0x9a, 0xab, 0xbc, \
-                                        0xcd, 0xde, 0xef, 0xf1            /**< Proprietary AES128 key. */
-#define APP_AES128_KEY2                 0xf1, 0x12, 0x23, 0x34, \
-                                        0x45, 0x56, 0x67, 0x78, \
-                                        0x89, 0x9a, 0xab, 0xbc, \
-                                        0xcd, 0xde, 0xef, 0x31            /**< Proprietary AES128 key. */										
+#define APP_AES_LENGTH          0x10                              /**< Total length for AES encryption. */										
 										
 #define DEAD_BEEF                        0xDEADBEEF                                 /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
@@ -125,7 +122,7 @@ static uint8_t m_beacon_info[APP_BEACON_INFO_LENGTH] =                    /**< I
                          // implementation. 
     APP_ADV_DATA_LENGTH, // Manufacturer specific information. Specifies the length of the 
                          // manufacturer specific data in this implementation.
-    APP_BEACON_UUID2,     // 128 bit UUID value. 
+    APP_BEACON_UUID,     // 128 bit UUID value. 
     APP_MAJOR_VALUE,     // Major arbitrary value that can be used to distinguish between Beacons. 
     APP_MINOR_VALUE,     // Minor arbitrary value that can be used to distinguish between Beacons. 
     APP_MEASURED_RSSI    // Manufacturer specific information. The Beacon's measured TX power in 
@@ -134,14 +131,16 @@ static uint8_t m_beacon_info[APP_BEACON_INFO_LENGTH] =                    /**< I
 
 static uint8_t m_aes128_key[APP_AES_LENGTH] =
 {
-	APP_AES128_KEY2
+	0
 };
 
 static uint8_t m_beacon_uuid[APP_AES_LENGTH] =
 {
-	APP_BEACON_UUID2
+	0
 };
 static uint32_t m_counter_ticks;
+static uint32_t m_fast_adv_interval;
+static char m_atcmd_resp_str[PSTORE_MAX_BLOCK + 1];
 static void advertising_reinit(void);
                                    
 /**@brief Callback function for asserts in the SoftDevice.
@@ -605,6 +604,111 @@ static void advertising_reinit(void)
     APP_ERROR_CHECK(err_code);
 }
 
+static void execute_atcmd(uint16_t index, uint8_t *data_array, char *p_resp_str)
+{
+	uint16_t param_size;
+	char datastr[16] = {0};
+	
+	memset(p_resp_str, 0, PSTORE_MAX_BLOCK + 1);
+	// Execute AT command.
+	switch (atcmd_parse(index, (char *)data_array)) {
+		case APP_ATCMD_ACT_CONFIG_GET :
+			memcpy(p_resp_str, atcmd_get_ok(), strlen(atcmd_get_ok()));
+			break;
+			
+		case APP_ATCMD_ACT_CONFIG_SET :
+			memcpy(p_resp_str, atcmd_get_ok(), strlen(atcmd_get_ok()));
+			break;
+			
+		case APP_ATCMD_ACT_CONFIG_GET_VER :
+			if (!config_hdlr_get_string("vers", &param_size, datastr))
+			{
+				strcpy(datastr, "NUL");
+			}
+			memcpy(p_resp_str, datastr, strlen(datastr));
+			break;
+			
+		default :
+			memcpy(p_resp_str, atcmd_get_nack(), strlen(atcmd_get_nack()));
+			break;
+	}
+}
+
+/**@brief   Function for handling app_uart events.
+ *
+ * @details This function will receive a single character from the app_uart module and append it to 
+ *          a string. The string will be be sent over BLE when the last character received was a 
+ *          'new line' i.e '\n' (hex 0x0D) or if the string has reached a length of 
+ *          @ref NUS_MAX_DATA_LENGTH.
+ */
+void uart_event_handle(app_uart_evt_t * p_event)
+{
+	static uint8_t data_array[APP_ATCMD_MAX_DATA_LEN];
+    static uint16_t index = 0;
+	
+    switch (p_event->evt_type)
+    {
+        /**@snippet [Handling data from UART] */ 
+        case APP_UART_DATA_READY:
+            UNUSED_VARIABLE(app_uart_get(&data_array[index]));
+            index++;
+            if ((data_array[index - 1] == '\r') ||
+				(index >= (APP_ATCMD_MAX_DATA_LEN)))
+				//(index >= (BLE_NUS_MAX_DATA_LEN)))
+            {
+                /*while (ble_nus_c_string_send(&m_ble_nus_c, data_array, index) != NRF_SUCCESS)
+                {
+                    // repeat until sent.
+                }*/
+				
+				// Execute AT command.
+				execute_atcmd(index, data_array, m_atcmd_resp_str);
+				m_atcmd_resp_str[strlen(m_atcmd_resp_str)] = '\n';
+				uart_reply_string(m_atcmd_resp_str);
+                index = 0;
+            }
+            break;
+        /**@snippet [Handling data from UART] */ 
+        case APP_UART_COMMUNICATION_ERROR:
+            APP_ERROR_HANDLER(p_event->data.error_communication);
+            break;
+
+        case APP_UART_FIFO_ERROR:
+            APP_ERROR_HANDLER(p_event->data.error_code);
+            break;
+
+        default:
+            break;
+    }
+}
+
+/**@brief Function for initializing the UART.
+ */
+static void uart_init(void)
+{
+    uint32_t err_code;
+
+    const app_uart_comm_params_t comm_params =
+      {
+        .rx_pin_no    = RX_PIN_NUMBER,
+        .tx_pin_no    = TX_PIN_NUMBER,
+        .rts_pin_no   = RTS_PIN_NUMBER,
+        .cts_pin_no   = CTS_PIN_NUMBER,
+        .flow_control = APP_UART_FLOW_CONTROL_DISABLED,
+        .use_parity   = false,
+        .baud_rate    = UART_BAUDRATE_BAUDRATE_Baud57600
+      };
+
+    APP_UART_FIFO_INIT(&comm_params,
+                        UART_RX_BUF_SIZE,
+                        UART_TX_BUF_SIZE,
+                        uart_event_handle,
+                        APP_IRQ_PRIORITY_LOW,
+                        err_code);
+
+    APP_ERROR_CHECK(err_code);
+}
+
 /**@brief Function for initializing buttons and leds.
  *
  * @param[out] p_erase_bonds  Will be true if the clear bonding button was pressed to wake the application up.
@@ -654,8 +758,11 @@ void SWI1_IRQHandler(bool radio_evt)
  */
 int main(void)
 {
+	uint8_t config_data_raw[PSTORE_MAX_BLOCK] = {0};
+	uint16_t config_size;
     uint32_t err_code;
     bool erase_bonds;
+	uint16_t param_size;
 
     // Initialize.
     timers_init();
@@ -669,7 +776,25 @@ int main(void)
     // Start execution.
     //err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
     //APP_ERROR_CHECK(err_code);
+	
+	// Matt: our code
+	// Get config data from internal flash.
+	uart_init();
+	sscan_init();
+	config_hdlr_init();
+	pstore_init();
+	
+	config_size = pstore_get(config_data_raw);
+	config_hdlr_parse(config_size, config_data_raw);
+	
+	// Set scan parameters
+	config_hdlr_get_longword("be06", &m_fast_adv_interval);
 
+	if (config_hdlr_get_bcd("be02", &param_size, (char *)m_beacon_uuid))
+		sscan_set_device_uuid(0, m_beacon_uuid);
+	if (config_hdlr_get_bcd("be05", &param_size, (char *)m_aes128_key))
+		sscan_set_encryption_key(0, m_aes128_key);
+	
 	// Radio notification
 	err_code = radio_notification_init(6, NRF_RADIO_NOTIFICATION_TYPE_INT_ON_INACTIVE, NRF_RADIO_NOTIFICATION_DISTANCE_800US);
     APP_ERROR_CHECK(err_code);

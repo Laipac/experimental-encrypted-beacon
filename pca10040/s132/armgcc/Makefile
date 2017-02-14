@@ -48,7 +48,8 @@ $(abspath ../../../../../../components/libraries/util/nrf_assert.c) \
 $(abspath ../../../../../../components/libraries/util/nrf_log.c) \
 $(abspath ../../../../../../components/libraries/uart/retarget.c) \
 $(abspath ../../../../../../components/libraries/sensorsim/sensorsim.c) \
-$(abspath ../../../../../../components/libraries/uart/app_uart.c) \
+$(abspath ../../../../../../components/libraries/fifo/app_fifo.c) \
+$(abspath ../../../../../../components/libraries/uart/app_uart_fifo.c) \
 $(abspath ../../../../../../components/drivers_nrf/delay/nrf_delay.c) \
 $(abspath ../../../../../../components/drivers_nrf/common/nrf_drv_common.c) \
 $(abspath ../../../../../../components/drivers_nrf/gpiote/nrf_drv_gpiote.c) \
@@ -56,6 +57,11 @@ $(abspath ../../../../../../components/drivers_nrf/uart/nrf_drv_uart.c) \
 $(abspath ../../../../../../components/drivers_nrf/pstorage/pstorage.c) \
 $(abspath ../../../../../bsp/bsp.c) \
 $(abspath ../../../../../bsp/bsp_btn_ble.c) \
+$(abspath ../../../uart_reply.c) \
+$(abspath ../../../atcmd.c) \
+$(abspath ../../../util.c) \
+$(abspath ../../../config_hdlr.c) \
+$(abspath ../../../pstore.c) \
 $(abspath ../../../secure_scan.c) \
 $(abspath ../../../radio_notify.c) \
 $(abspath ../../../main.c) \
@@ -66,6 +72,9 @@ $(abspath ../../../../../../components/ble/common/ble_srv_common.c) \
 $(abspath ../../../../../../components/ble/device_manager/device_manager_peripheral.c) \
 $(abspath ../../../../../../components/toolchain/system_nrf52.c) \
 $(abspath ../../../../../../components/softdevice/common/softdevice_handler/softdevice_handler.c) \
+#$(abspath ../../../../../../external/segger_rtt/RTT_Syscalls_GCC.c) \
+#$(abspath ../../../../../../external/segger_rtt/SEGGER_RTT.c) \
+#$(abspath ../../../../../../external/segger_rtt/SEGGER_RTT_printf.c) \
 
 #assembly files common to all targets
 ASM_SOURCE_FILES  = $(abspath ../../../../../../components/toolchain/gcc/gcc_startup_nrf52.s)
@@ -75,6 +84,7 @@ INC_PATHS  = -I$(abspath ../../../config/ble_app_template_s132_pca10040)
 INC_PATHS += -I$(abspath ../../../config)
 INC_PATHS += -I$(abspath ../../../../../../components/drivers_nrf/config)
 INC_PATHS += -I$(abspath ../../../../../../components/libraries/timer)
+INC_PATHS += -I$(abspath ../../../../../../components/libraries/fifo)
 INC_PATHS += -I$(abspath ../../../../../../components/libraries/fstorage/config)
 INC_PATHS += -I$(abspath ../../../../../../components/drivers_nrf/delay)
 INC_PATHS += -I$(abspath ../../../../../../components/softdevice/s132/headers/nrf52)
@@ -100,6 +110,7 @@ INC_PATHS += -I$(abspath ../../../../../../components/drivers_nrf/common)
 INC_PATHS += -I$(abspath ../../../../../../components/ble/ble_advertising)
 INC_PATHS += -I$(abspath ../../../../../../components/libraries/trace)
 INC_PATHS += -I$(abspath ../../../../../../components/softdevice/common/softdevice_handler)
+INC_PATHS += -I$(abspath ../../../../../../external/segger_rtt)
 
 OBJECT_DIRECTORY = _build
 LISTING_DIRECTORY = $(OBJECT_DIRECTORY)
@@ -122,7 +133,8 @@ CFLAGS += -DNRF52_PAN_30
 CFLAGS += -DNRF52_PAN_51
 CFLAGS += -DNRF52_PAN_36
 CFLAGS += -DNRF52_PAN_53
-CFLAGS += -DNRF_LOG_USES_UART=1
+CFLAGS += -DNRF_LOG_USES_RTT=0
+#CFLAGS += -DNRF_LOG_USES_UART=1
 CFLAGS += -DS132
 CFLAGS += -DCONFIG_GPIO_AS_PINRESET
 CFLAGS += -DBLE_STACK_SUPPORT_REQD
@@ -131,6 +143,7 @@ CFLAGS += -DNRF52_PAN_20
 CFLAGS += -DNRF52_PAN_64
 CFLAGS += -DNRF52_PAN_62
 CFLAGS += -DNRF52_PAN_63
+CFLAGS += -DBSP_UART_SUPPORT
 CFLAGS += -mcpu=cortex-m4
 CFLAGS += -mthumb -mabi=aapcs --std=gnu99
 CFLAGS += -Wall -Werror -O3 -g3
@@ -172,6 +185,7 @@ ASMFLAGS += -DNRF52_PAN_20
 ASMFLAGS += -DNRF52_PAN_64
 ASMFLAGS += -DNRF52_PAN_62
 ASMFLAGS += -DNRF52_PAN_63
+ASMFLAGS += -DBSP_UART_SUPPORT
 
 #default target - first one defined
 default: clean nrf52832_xxaa_s132
