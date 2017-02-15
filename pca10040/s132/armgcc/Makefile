@@ -67,6 +67,7 @@ $(abspath ../../../radio_notify.c) \
 $(abspath ../../../main.c) \
 $(abspath ../../../../../../components/ble/common/ble_advdata.c) \
 $(abspath ../../../../../../components/ble/ble_advertising/ble_advertising.c) \
+$(abspath ../../../../../../components/ble/ble_services/ble_nus/ble_nus.c) \
 $(abspath ../../../../../../components/ble/common/ble_conn_params.c) \
 $(abspath ../../../../../../components/ble/common/ble_srv_common.c) \
 $(abspath ../../../../../../components/ble/device_manager/device_manager_peripheral.c) \
@@ -102,6 +103,7 @@ INC_PATHS += -I$(abspath ../../../../../../components/libraries/experimental_sec
 INC_PATHS += -I$(abspath ../../../../../../components/softdevice/s132/headers)
 INC_PATHS += -I$(abspath ../../../../../../components/drivers_nrf/gpiote)
 INC_PATHS += -I$(abspath ../../../../../bsp)
+INC_PATHS += -I$(abspath ../../../../../../components/ble/ble_services/ble_nus)
 INC_PATHS += -I$(abspath ../../../../../../components/toolchain/CMSIS/Include)
 INC_PATHS += -I$(abspath ../../../../../../components/drivers_nrf/hal)
 INC_PATHS += -I$(abspath ../../../../../../components/toolchain/gcc)
@@ -146,7 +148,7 @@ CFLAGS += -DNRF52_PAN_63
 CFLAGS += -DBSP_UART_SUPPORT
 CFLAGS += -mcpu=cortex-m4
 CFLAGS += -mthumb -mabi=aapcs --std=gnu99
-CFLAGS += -Wall -Werror -O3 -g3
+# CFLAGS += -Wall -Werror -O3 -g3
 CFLAGS += -mfloat-abi=hard -mfpu=fpv4-sp-d16
 # keep every function in separate section. This will allow linker to dump unused functions
 CFLAGS += -ffunction-sections -fdata-sections -fno-strict-aliasing

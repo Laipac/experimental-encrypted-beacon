@@ -37,6 +37,7 @@
 #include "ble_srv_common.h"
 #include "ble_advdata.h"
 #include "ble_advertising.h"
+#include "ble_nus.h"
 #include "ble_conn_params.h"
 #include "boards.h"
 #include "softdevice_handler.h"
@@ -69,11 +70,13 @@
 #define CENTRAL_LINK_COUNT               0                                          /**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
 #define PERIPHERAL_LINK_COUNT            1                                          /**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
 
-#define DEVICE_NAME                      "ThisIsAReallyLongName"                               /**< Name of device. Will be included in the advertising data. */
+#define DEVICE_NAME                      "S-Beacon"                                 /**< Name of device. Will be included in the advertising data. */
+#define NUS_SERVICE_UUID_TYPE           BLE_UUID_TYPE_VENDOR_BEGIN                  /**< UUID type for the Nordic UART Service (vendor specific). */
 //#define APP_ADV_INTERVAL                 300                                        /**< The advertising interval (in units of 0.625 ms. This value corresponds to 25 ms). */
 //#define APP_ADV_TIMEOUT_IN_SECONDS       20                                        /**< The advertising timeout in units of seconds. */
 #define APP_ADV_INTERVAL                 300                                        /**< The advertising interval (in units of 0.625 ms. This value corresponds to 100 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS       0                                        /**< The advertising timeout in units of seconds. */
+#define APP_ADV_NUS_TIMEOUT_IN_SECONDS   60                                        /**< The advertising timeout in units of seconds. */
 
 #define APP_TIMER_PRESCALER              0                                          /**< Value of the RTC1 PRESCALER register. */
 #define APP_TIMER_OP_QUEUE_SIZE          4                                          /**< Size of timer operation queues. */
@@ -114,7 +117,10 @@
 
 static dm_application_instance_t         m_app_handle;                              /**< Application identifier allocated by device manager */
 
-static uint16_t                          m_conn_handle = BLE_CONN_HANDLE_INVALID;   /**< Handle of the current connection. */
+static ble_nus_t                        m_nus;                                      /**< Structure to identify the Nordic UART Service. */
+static uint16_t                         m_conn_handle = BLE_CONN_HANDLE_INVALID;    /**< Handle of the current connection. */
+
+static ble_uuid_t                       m_adv_uuids[] = {{BLE_UUID_NUS_SERVICE, NUS_SERVICE_UUID_TYPE}};  /**< Universally unique service identifier. */
 
 static uint8_t m_beacon_info[APP_BEACON_INFO_LENGTH] =                    /**< Information advertised by the Beacon. */
 {
@@ -138,10 +144,13 @@ static uint8_t m_beacon_uuid[APP_AES_LENGTH] =
 {
 	0
 };
+static uint8_t m_adv_reinit = 0;
 static uint32_t m_counter_ticks;
 static uint32_t m_fast_adv_interval;
 static char m_atcmd_resp_str[PSTORE_MAX_BLOCK + 1];
+static uint8_t m_ble_data_src[APP_ATCMD_MAX_DATA_LEN] = {0};
 static void advertising_reinit(void);
+static void advertising_init(void);
                                    
 /**@brief Callback function for asserts in the SoftDevice.
  *
@@ -310,9 +319,15 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
             err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING);
             APP_ERROR_CHECK(err_code);
             break;
+			
         case BLE_ADV_EVT_IDLE:
-            sleep_mode_enter();
+			advertising_init();
+			err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
+			APP_ERROR_CHECK(err_code);
+			m_adv_reinit = 1;
+
             break;
+			
         default:
             break;
     }
@@ -360,6 +375,7 @@ static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
     bsp_btn_ble_on_ble_evt(p_ble_evt);
     on_ble_evt(p_ble_evt);
     ble_advertising_on_ble_evt(p_ble_evt);
+	ble_nus_on_ble_evt(&m_nus, p_ble_evt);
 }
 
 
@@ -506,6 +522,33 @@ static void device_manager_init(bool erase_bonds)
     APP_ERROR_CHECK(err_code);
 }
 
+/**@brief Function for initializing the Advertising functionality.
+ */
+static void nus_advertising_init(void)
+{
+    uint32_t      err_code;
+    ble_advdata_t advdata;
+    ble_advdata_t scanrsp;
+
+    // Build advertising data struct to pass into @ref ble_advertising_init.
+    memset(&advdata, 0, sizeof(advdata));
+    advdata.name_type          = BLE_ADVDATA_FULL_NAME;
+    advdata.include_appearance = false;
+    advdata.flags              = BLE_GAP_ADV_FLAGS_LE_ONLY_LIMITED_DISC_MODE;
+
+    memset(&scanrsp, 0, sizeof(scanrsp));
+    scanrsp.uuids_complete.uuid_cnt = sizeof(m_adv_uuids) / sizeof(m_adv_uuids[0]);
+    scanrsp.uuids_complete.p_uuids  = m_adv_uuids;
+
+    ble_adv_modes_config_t options = {0};
+    options.ble_adv_fast_enabled  = BLE_ADV_FAST_ENABLED;
+    options.ble_adv_fast_interval = APP_ADV_INTERVAL;
+    options.ble_adv_fast_timeout  = APP_ADV_NUS_TIMEOUT_IN_SECONDS;
+
+    //err_code = ble_advertising_init(&advdata, &scanrsp, &options, on_adv_evt, NULL);
+	err_code = ble_advertising_init(&advdata, NULL, &options, on_adv_evt, NULL);
+    APP_ERROR_CHECK(err_code);
+}
 
 /**@brief Function for initializing the Advertising functionality.
  */
@@ -747,11 +790,65 @@ void SWI1_IRQHandler(bool radio_evt)
 		if (!loop)
 		{
 			loop = 10;
-			advertising_reinit();
+			if (m_adv_reinit)
+			{
+				advertising_reinit();
+			}
 		}
 		else
 			loop--;
     }
+}
+
+/**@brief Function for handling the data from the Nordic UART Service.
+ *
+ * @details This function will process the data received from the Nordic UART BLE Service and send
+ *          it to the UART module.
+ *
+ * @param[in] p_nus    Nordic UART Service structure.
+ * @param[in] p_data   Data to be send to UART module.
+ * @param[in] length   Length of the data.
+ */
+/**@snippet [Handling the data received over BLE] */
+static void nus_data_handler(ble_nus_t * p_nus, uint8_t * p_data, uint16_t length)
+{
+	uint32_t err_code;
+	uint16_t cur_len = strlen((char *)m_ble_data_src);
+	
+	// Execute AT command.
+	memcpy(m_ble_data_src + cur_len, p_data, length);
+	length += cur_len;
+	// Need to have the '\r' or ';' as the terminator!
+	if (m_ble_data_src[length-1] == ';')
+		m_ble_data_src[length-1] = '\r';
+	
+	if (m_ble_data_src[length-1] != '\r')
+		return;
+	
+	execute_atcmd(length, m_ble_data_src, m_atcmd_resp_str);
+	err_code = ble_nus_string_send(&m_nus, (uint8_t *)m_atcmd_resp_str, strlen(m_atcmd_resp_str));
+	if (err_code != NRF_ERROR_INVALID_STATE)
+	{
+		APP_ERROR_CHECK(err_code);
+	}
+	// Clear the ble command buffer.
+	memset(m_ble_data_src, 0, APP_ATCMD_MAX_DATA_LEN);			
+}
+
+
+/**@brief Function for initializing services that will be used by the application.
+ */
+static void services_init(void)
+{
+    uint32_t       err_code;
+    ble_nus_init_t nus_init;
+    
+    memset(&nus_init, 0, sizeof(nus_init));
+
+    nus_init.data_handler = nus_data_handler;
+    
+    err_code = ble_nus_init(&m_nus, &nus_init);
+    APP_ERROR_CHECK(err_code);
 }
 
 /**@brief Function for application main entry.
@@ -770,9 +867,10 @@ int main(void)
     ble_stack_init();
     device_manager_init(erase_bonds);
     gap_params_init();
-    advertising_init();
+    nus_advertising_init();
     conn_params_init();
-
+	services_init();
+	
     // Start execution.
     //err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
     //APP_ERROR_CHECK(err_code);
