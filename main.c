@@ -545,8 +545,7 @@ static void nus_advertising_init(void)
     options.ble_adv_fast_interval = APP_ADV_INTERVAL;
     options.ble_adv_fast_timeout  = APP_ADV_NUS_TIMEOUT_IN_SECONDS;
 
-    //err_code = ble_advertising_init(&advdata, &scanrsp, &options, on_adv_evt, NULL);
-	err_code = ble_advertising_init(&advdata, NULL, &options, on_adv_evt, NULL);
+    err_code = ble_advertising_init(&advdata, &scanrsp, &options, on_adv_evt, NULL);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -867,9 +866,9 @@ int main(void)
     ble_stack_init();
     device_manager_init(erase_bonds);
     gap_params_init();
-    nus_advertising_init();
     conn_params_init();
 	services_init();
+    nus_advertising_init();
 	
     // Start execution.
     //err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
