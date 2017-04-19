@@ -19,6 +19,7 @@
 #define APP_ATCMD_ACT_CONFIG_UPD        9
 #define APP_ATCMD_ACT_CURRENT_TS       10
 #define APP_ATCMD_ACT_LAST_SENTENCE    11
+#define APP_ATCMD_ACT_TEST             12
 #define APP_ATCMD_NOT_SUPPORTED     0xff
 
 #define APP_BUILDING_CODE_LENGTH	0X10
@@ -40,6 +41,7 @@ typedef struct
 	char        version_str[APP_VERSION_STR_MAX];
 	uint16_t    config_size;
 	char		config_size_str[APP_WORD_STR_LEN];
+	char        test_number;
 } atcmd_data_t;
 
 typedef struct
@@ -65,4 +67,5 @@ char *atcmd_get_out(void);
 
 void atcmd_set_lastcmd(char *p_src);
 char *atcmd_get_lastcmd(void);
+char atcmd_get_test(void);
 #endif  /* _ ATCMD_H__ */

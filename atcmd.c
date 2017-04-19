@@ -34,7 +34,8 @@ static const char * m_atcmds[] = {
 	"at$cfggetv?",
 	"at$cfgupd",
 	"at$curts?",
-	"at$lastsen?"
+	"at$lastsen?",
+	"at$test"
 };
 
 static atcmd_param_desc_t m_scan[] = {{0, 1}};  // scan status
@@ -44,6 +45,7 @@ static atcmd_param_desc_t m_scanint[] = {{0, 2},   // scan interval
 static atcmd_param_desc_t m_configdat[] = {{1, 0},   // version string
 										   {0, 2},  // config data size
 										   {1, 0}};   // config data, no white space support
+static atcmd_param_desc_t m_test[] = {{0, 1}};  // scan status
 										   
 static bool check_ascii_word (uint8_t *p_data, uint8_t len)
 {
@@ -309,6 +311,24 @@ static bool atcmd_extract_cmd(uint16_t buffer_len, char *p_data)
 		case APP_ATCMD_ACT_CURRENT_TS :
 		case APP_ATCMD_ACT_LAST_SENTENCE :
 			break;
+
+		case APP_ATCMD_ACT_TEST :
+			// Get the next parameter, the single byte on/off status
+			while (*(p_data + i) == m_space &&
+			       i < buffer_len)
+				i++;
+				
+			if (i == buffer_len)
+				return false;
+	
+			bytedata = *(p_data + i);
+			if (!m_test[0].is_str)
+			{
+				// Convert ascii to data.
+				bytedata -= 0x30;
+				m_scanner.test_number = bytedata;
+			}
+			break;
 			
 		default :
 			break;
@@ -369,6 +389,10 @@ static uint8_t atcmd_run_cmd()
 		case APP_ATCMD_ACT_LAST_SENTENCE :
 			rc = APP_ATCMD_ACT_LAST_SENTENCE;
 			break;
+
+		case APP_ATCMD_ACT_TEST :
+			rc = APP_ATCMD_ACT_TEST;
+			break;
 			
 		default :
 			break;
@@ -385,6 +409,7 @@ void atcmd_init(void)
 	m_scanner.scan_interval = 0x00A0;
 	m_scanner.scan_window = 0x0050;
 	m_scanner.mode = 0;
+	m_scanner.test_number = 0;
 	m_scanner.mode_byte = '0';
 	m_scanner.enable = 1;
 	m_scanner.enable_byte = '0';
@@ -512,4 +537,9 @@ void atcmd_set_lastcmd(char *p_src)
 char *atcmd_get_lastcmd(void)
 {
 	return (m_last_sentence);
+}
+
+char atcmd_get_test(void)
+{
+	return (m_scanner.test_number);
 }

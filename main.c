@@ -76,7 +76,7 @@
 //#define APP_ADV_TIMEOUT_IN_SECONDS       20                                        /**< The advertising timeout in units of seconds. */
 #define APP_ADV_INTERVAL                 300                                        /**< The advertising interval (in units of 0.625 ms. This value corresponds to 100 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS       0                                        /**< The advertising timeout in units of seconds. */
-#define APP_ADV_NUS_TIMEOUT_IN_SECONDS   60                                        /**< The advertising timeout in units of seconds. */
+#define APP_ADV_NUS_TIMEOUT_IN_SECONDS   180                                        /**< The advertising timeout in units of seconds. */
 
 #define APP_TIMER_PRESCALER              0                                          /**< Value of the RTC1 PRESCALER register. */
 #define APP_TIMER_OP_QUEUE_SIZE          4                                          /**< Size of timer operation queues. */
@@ -149,6 +149,12 @@ static uint32_t m_counter_ticks;
 static uint32_t m_fast_adv_interval;
 static char m_atcmd_resp_str[PSTORE_MAX_BLOCK + 1];
 static uint8_t m_ble_data_src[APP_ATCMD_MAX_DATA_LEN] = {0};
+
+static char m_cgdcont[] = "AT+CGDCONT = 1,\"IP\",\"nmrx.ca.apn\",\"0.0.0.0\",0,0";
+static char m_scfg[] = "AT#SCFG=1,1,1500,0,280,5";
+static char m_sgact[] = "AT#SGACT=1,1,\"EASY GPRS\",\"EASY GPRS\"";
+static char m_sd[] = "AT#SD=1,0,80,\"www.telit.com\",0,0";
+
 static void advertising_reinit(void);
 static void advertising_init(void);
                                    
@@ -648,6 +654,7 @@ static void advertising_reinit(void)
 
 static void execute_atcmd(uint16_t index, uint8_t *data_array, char *p_resp_str)
 {
+	uint8_t i;
 	uint16_t param_size;
 	char datastr[16] = {0};
 	
@@ -669,6 +676,31 @@ static void execute_atcmd(uint16_t index, uint8_t *data_array, char *p_resp_str)
 			}
 			memcpy(p_resp_str, datastr, strlen(datastr));
 			break;
+
+		case APP_ATCMD_ACT_TEST :
+			switch (atcmd_get_test()) {
+				case 1 :
+				    for (i = 0; i < strlen(m_cgdcont); i++)
+						while (app_uart_put(m_cgdcont[i]) != NRF_SUCCESS);
+					while (app_uart_put('\r') != NRF_SUCCESS);
+				    break;
+				case 2 :
+				    for (i = 0; i < strlen(m_scfg); i++)
+						while (app_uart_put(m_scfg[i]) != NRF_SUCCESS);
+					while (app_uart_put('\r') != NRF_SUCCESS);
+					break;
+				case 3 :
+				    for (i = 0; i < strlen(m_sgact); i++)
+						while (app_uart_put(m_sgact[i]) != NRF_SUCCESS);
+					while (app_uart_put('\r') != NRF_SUCCESS);
+					break;
+				case 4 :
+				    for (i = 0; i < strlen(m_sd); i++)
+						while (app_uart_put(m_sd[i]) != NRF_SUCCESS);
+					while (app_uart_put('\r') != NRF_SUCCESS);
+					break;
+			}
+			break;
 			
 		default :
 			memcpy(p_resp_str, atcmd_get_nack(), strlen(atcmd_get_nack()));
@@ -683,34 +715,31 @@ static void execute_atcmd(uint16_t index, uint8_t *data_array, char *p_resp_str)
  *          'new line' i.e '\n' (hex 0x0D) or if the string has reached a length of 
  *          @ref NUS_MAX_DATA_LENGTH.
  */
+/**@snippet [Handling the data received over UART] */
 void uart_event_handle(app_uart_evt_t * p_event)
 {
-	static uint8_t data_array[APP_ATCMD_MAX_DATA_LEN];
-    static uint16_t index = 0;
-	
+    static uint8_t data_array[BLE_NUS_MAX_DATA_LEN];
+    static uint8_t index = 0;
+    uint32_t       err_code;
+
     switch (p_event->evt_type)
     {
-        /**@snippet [Handling data from UART] */ 
         case APP_UART_DATA_READY:
             UNUSED_VARIABLE(app_uart_get(&data_array[index]));
             index++;
-            if ((data_array[index - 1] == '\r') ||
-				(index >= (APP_ATCMD_MAX_DATA_LEN)))
-				//(index >= (BLE_NUS_MAX_DATA_LEN)))
+
+            if ((data_array[index - 1] == '\n') || (index >= (BLE_NUS_MAX_DATA_LEN)))
             {
-                /*while (ble_nus_c_string_send(&m_ble_nus_c, data_array, index) != NRF_SUCCESS)
+                err_code = ble_nus_string_send(&m_nus, data_array, index);
+                if (err_code != NRF_ERROR_INVALID_STATE)
                 {
-                    // repeat until sent.
-                }*/
-				
-				// Execute AT command.
-				execute_atcmd(index, data_array, m_atcmd_resp_str);
-				m_atcmd_resp_str[strlen(m_atcmd_resp_str)] = '\n';
-				uart_reply_string(m_atcmd_resp_str);
+                    APP_ERROR_CHECK(err_code);
+                }
+                
                 index = 0;
             }
             break;
-        /**@snippet [Handling data from UART] */ 
+
         case APP_UART_COMMUNICATION_ERROR:
             APP_ERROR_HANDLER(p_event->data.error_communication);
             break;
@@ -859,7 +888,10 @@ int main(void)
     uint32_t err_code;
     bool erase_bonds;
 	uint16_t param_size;
-
+	char sanity[] = "Hello world!";
+	
+	SEGGER_RTT_printf(0, "%s\n", sanity);
+	
     // Initialize.
     timers_init();
     buttons_leds_init(&erase_bonds);
@@ -877,6 +909,7 @@ int main(void)
 	// Matt: our code
 	// Get config data from internal flash.
 	uart_init();
+	/*
 	sscan_init();
 	config_hdlr_init();
 	pstore_init();
@@ -910,7 +943,7 @@ int main(void)
 	}
 	else
 		m_counter_ticks = 0;
-	
+	*/
     // Start execution.
     err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
     APP_ERROR_CHECK(err_code);
