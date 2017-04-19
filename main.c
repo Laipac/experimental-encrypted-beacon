@@ -76,7 +76,7 @@
 //#define APP_ADV_TIMEOUT_IN_SECONDS       20                                        /**< The advertising timeout in units of seconds. */
 #define APP_ADV_INTERVAL                 300                                        /**< The advertising interval (in units of 0.625 ms. This value corresponds to 100 ms). */
 #define APP_ADV_TIMEOUT_IN_SECONDS       0                                        /**< The advertising timeout in units of seconds. */
-#define APP_ADV_NUS_TIMEOUT_IN_SECONDS   180                                        /**< The advertising timeout in units of seconds. */
+#define APP_ADV_NUS_TIMEOUT_IN_SECONDS   60                                        /**< The advertising timeout in units of seconds. */
 
 #define APP_TIMER_PRESCALER              0                                          /**< Value of the RTC1 PRESCALER register. */
 #define APP_TIMER_OP_QUEUE_SIZE          4                                          /**< Size of timer operation queues. */
@@ -358,6 +358,10 @@ static void on_ble_evt(ble_evt_t * p_ble_evt)
 
         case BLE_GAP_EVT_DISCONNECTED:
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
+            err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING);
+            APP_ERROR_CHECK(err_code);
+			err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
+			APP_ERROR_CHECK(err_code);
             break;
 
         default:
@@ -888,9 +892,6 @@ int main(void)
     uint32_t err_code;
     bool erase_bonds;
 	uint16_t param_size;
-	char sanity[] = "Hello world!";
-	
-	SEGGER_RTT_printf(0, "%s\n", sanity);
 	
     // Initialize.
     timers_init();
@@ -909,7 +910,6 @@ int main(void)
 	// Matt: our code
 	// Get config data from internal flash.
 	uart_init();
-	/*
 	sscan_init();
 	config_hdlr_init();
 	pstore_init();
@@ -943,7 +943,7 @@ int main(void)
 	}
 	else
 		m_counter_ticks = 0;
-	*/
+	
     // Start execution.
     err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
     APP_ERROR_CHECK(err_code);

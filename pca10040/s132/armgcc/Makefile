@@ -73,9 +73,9 @@ $(abspath ../../../../../../components/ble/common/ble_srv_common.c) \
 $(abspath ../../../../../../components/ble/device_manager/device_manager_peripheral.c) \
 $(abspath ../../../../../../components/toolchain/system_nrf52.c) \
 $(abspath ../../../../../../components/softdevice/common/softdevice_handler/softdevice_handler.c) \
-$(abspath ../../../../../../external/segger_rtt/RTT_Syscalls_GCC.c) \
-$(abspath ../../../../../../external/segger_rtt/SEGGER_RTT.c) \
-$(abspath ../../../../../../external/segger_rtt/SEGGER_RTT_printf.c) \
+#$(abspath ../../../../../../external/segger_rtt/RTT_Syscalls_GCC.c) \
+#$(abspath ../../../../../../external/segger_rtt/SEGGER_RTT.c) \
+#$(abspath ../../../../../../external/segger_rtt/SEGGER_RTT_printf.c) \
 
 #assembly files common to all targets
 ASM_SOURCE_FILES  = $(abspath ../../../../../../components/toolchain/gcc/gcc_startup_nrf52.s)
@@ -135,7 +135,7 @@ CFLAGS += -DNRF52_PAN_30
 CFLAGS += -DNRF52_PAN_51
 CFLAGS += -DNRF52_PAN_36
 CFLAGS += -DNRF52_PAN_53
-CFLAGS += -DNRF_LOG_USES_RTT=1
+CFLAGS += -DNRF_LOG_USES_RTT=0
 #CFLAGS += -DNRF_LOG_USES_UART=1
 CFLAGS += -DS132
 CFLAGS += -DCONFIG_GPIO_AS_PINRESET
