@@ -55,6 +55,8 @@ $(abspath ../../../../../../components/drivers_nrf/common/nrf_drv_common.c) \
 $(abspath ../../../../../../components/drivers_nrf/gpiote/nrf_drv_gpiote.c) \
 $(abspath ../../../../../../components/drivers_nrf/uart/nrf_drv_uart.c) \
 $(abspath ../../../../../../components/drivers_nrf/pstorage/pstorage.c) \
+$(abspath ../../../../../../components/drivers_nrf/saadc/nrf_drv_saadc.c) \
+$(abspath ../../../../../../components/drivers_nrf/hal/nrf_saadc.c) \
 $(abspath ../../../../../bsp/bsp.c) \
 $(abspath ../../../../../bsp/bsp_btn_ble.c) \
 $(abspath ../../../uart_reply.c) \
@@ -102,6 +104,7 @@ INC_PATHS += -I$(abspath ../../../../../../components/libraries/fstorage)
 INC_PATHS += -I$(abspath ../../../../../../components/libraries/experimental_section_vars)
 INC_PATHS += -I$(abspath ../../../../../../components/softdevice/s132/headers)
 INC_PATHS += -I$(abspath ../../../../../../components/drivers_nrf/gpiote)
+INC_PATHS += -I$(abspath ../../../../../../components/drivers_nrf/saadc)
 INC_PATHS += -I$(abspath ../../../../../bsp)
 INC_PATHS += -I$(abspath ../../../../../../components/ble/ble_services/ble_nus)
 INC_PATHS += -I$(abspath ../../../../../../components/toolchain/CMSIS/Include)

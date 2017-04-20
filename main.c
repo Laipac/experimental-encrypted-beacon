@@ -53,6 +53,7 @@
 #include "ble_advdata.h"
 #include "ble_advertising.h"
 #include "nrf_delay.h"
+#include "nrf_drv_saadc.h"
 #include "SEGGER_RTT.h"
 
 #include "atcmd.h"
@@ -114,6 +115,28 @@
 #define APP_AES_LENGTH          0x10                              /**< Total length for AES encryption. */										
 										
 #define DEAD_BEEF                        0xDEADBEEF                                 /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
+
+#define GPIO_TELLIT_ON                      12
+#define GPIO_TELLIT_RESET                   13
+#define GPIO_TELLIT_DTR                     11
+#define AIN_TELLIT_MON                      0
+#define TELLIT_ON_PULSE_MS                        1500
+
+#define ADC_REF_VOLTAGE_IN_MILLIVOLTS       600                                          /**< Reference voltage (in milli volts) used by ADC while doing conversion. */
+#define ADC_PRE_SCALING_COMPENSATION        6                                            /**< The ADC is configured to use VDD with 1/3 prescaling as input. And hence the result of conversion is to be multiplied by 3 to get the actual value of the battery voltage.*/
+#define DIODE_FWD_VOLT_DROP_MILLIVOLTS      270                                          /**< Typical forward voltage drop of the diode (Part no: SD103ATW-7-F) that is connected in series with the voltage supply. This is the voltage drop when the forward current is 1mA. Source: Data sheet of 'SURFACE MOUNT SCHOTTKY BARRIER DIODE ARRAY' available at www.diodes.com. */
+#define ADC_RES_10BIT                       1024                                         /**< Maximum digital value for 10-bit ADC conversion. */
+
+/**@brief Macro to convert the result of ADC conversion in millivolts.
+ *
+ * @param[in]  ADC_VALUE   ADC result.
+ *
+ * @retval     Result converted to millivolts.
+ */
+#define ADC_RESULT_IN_MILLI_VOLTS(ADC_VALUE)\
+        ((((ADC_VALUE) * ADC_REF_VOLTAGE_IN_MILLIVOLTS) / ADC_RES_10BIT) * ADC_PRE_SCALING_COMPENSATION)
+
+static nrf_saadc_value_t adc_buf[2];
 
 static dm_application_instance_t         m_app_handle;                              /**< Application identifier allocated by device manager */
 
@@ -704,6 +727,7 @@ static void execute_atcmd(uint16_t index, uint8_t *data_array, char *p_resp_str)
 					while (app_uart_put('\r') != NRF_SUCCESS);
 					break;
 			}
+			memcpy(p_resp_str, atcmd_get_ok(), strlen(atcmd_get_ok()));
 			break;
 			
 		default :
@@ -732,7 +756,9 @@ void uart_event_handle(app_uart_evt_t * p_event)
             UNUSED_VARIABLE(app_uart_get(&data_array[index]));
             index++;
 
-            if ((data_array[index - 1] == '\n') || (index >= (BLE_NUS_MAX_DATA_LEN)))
+            if ((data_array[index - 1] == '\n') ||
+                (data_array[index - 1] == '\r') ||			
+			    (index >= (BLE_NUS_MAX_DATA_LEN)))
             {
                 err_code = ble_nus_string_send(&m_nus, data_array, index);
                 if (err_code != NRF_ERROR_INVALID_STATE)
@@ -771,7 +797,7 @@ static void uart_init(void)
         .cts_pin_no   = CTS_PIN_NUMBER,
         .flow_control = APP_UART_FLOW_CONTROL_DISABLED,
         .use_parity   = false,
-        .baud_rate    = UART_BAUDRATE_BAUDRATE_Baud57600
+        .baud_rate    = UART_BAUDRATE_BAUDRATE_Baud115200
       };
 
     APP_UART_FIFO_INIT(&comm_params,
@@ -883,6 +909,57 @@ static void services_init(void)
     APP_ERROR_CHECK(err_code);
 }
 
+/**@brief Function for handling the ADC interrupt.
+ *
+ * @details  This function will fetch the conversion result from the ADC, convert the value into
+ *           percentage and send it to peer.
+ */
+void saadc_event_handler(nrf_drv_saadc_evt_t const * p_event)
+{
+    if (p_event->type == NRF_DRV_SAADC_EVT_DONE)
+    {
+        nrf_saadc_value_t adc_result;
+        uint16_t          batt_lvl_in_milli_volts;
+        uint32_t          err_code;
+
+        adc_result = p_event->data.done.p_buffer[0];
+
+        err_code = nrf_drv_saadc_buffer_convert(p_event->data.done.p_buffer, 1);
+        APP_ERROR_CHECK(err_code);
+
+        batt_lvl_in_milli_volts = ADC_RESULT_IN_MILLI_VOLTS(adc_result) +
+                                  DIODE_FWD_VOLT_DROP_MILLIVOLTS;
+    }
+}
+
+/**@brief Function for configuring the GPIO.
+ *
+ * @details  This function will configure GPIO P0.12 and P0.13 as input lines.
+ */
+void gpio_configure(void)
+{
+	nrf_gpio_cfg_output(GPIO_TELLIT_ON);
+	nrf_gpio_cfg_output(GPIO_TELLIT_RESET);
+}
+
+/**@brief Function for configuring ADC to do battery level conversion.
+ */
+static void adc_configure(void)
+{
+    ret_code_t err_code = nrf_drv_saadc_init(NULL, saadc_event_handler);
+    APP_ERROR_CHECK(err_code);
+
+    nrf_saadc_channel_config_t config = NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_VDD);
+    err_code = nrf_drv_saadc_channel_init(AIN_TELLIT_MON,&config);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_drv_saadc_buffer_convert(&adc_buf[0], 1);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_drv_saadc_buffer_convert(&adc_buf[1], 1);
+    APP_ERROR_CHECK(err_code);
+}
+
 /**@brief Function for application main entry.
  */
 int main(void)
@@ -897,6 +974,8 @@ int main(void)
     timers_init();
     buttons_leds_init(&erase_bonds);
     ble_stack_init();
+	gpio_configure();
+    adc_configure();
     device_manager_init(erase_bonds);
     gap_params_init();
     conn_params_init();
@@ -909,7 +988,6 @@ int main(void)
 	
 	// Matt: our code
 	// Get config data from internal flash.
-	uart_init();
 	sscan_init();
 	config_hdlr_init();
 	pstore_init();
@@ -943,6 +1021,17 @@ int main(void)
 	}
 	else
 		m_counter_ticks = 0;
+	
+	// Pulse the power on pin of the Tellit module for 1.5 seconds.
+    nrf_gpio_pin_set(GPIO_TELLIT_ON);
+    nrf_delay_ms(TELLIT_ON_PULSE_MS);
+    nrf_gpio_pin_clear(GPIO_TELLIT_ON);
+			
+	// Check PWRMON (P0.02) from Tellit module
+	err_code = nrf_drv_saadc_sample();
+    APP_ERROR_CHECK(err_code);
+	
+	uart_init();
 	
     // Start execution.
     err_code = ble_advertising_start(BLE_ADV_MODE_FAST);
