@@ -173,6 +173,7 @@ static uint32_t m_fast_adv_interval;
 static char m_atcmd_resp_str[PSTORE_MAX_BLOCK + 1];
 static uint8_t m_ble_data_src[APP_ATCMD_MAX_DATA_LEN] = {0};
 
+static char m_at[] = "AT";
 static char m_cgdcont[] = "AT+CGDCONT = 1,\"IP\",\"nmrx.ca.apn\",\"0.0.0.0\",0,0";
 static char m_scfg[] = "AT#SCFG=1,1,1500,0,280,5";
 static char m_sgact[] = "AT#SGACT=1,1,\"EASY GPRS\",\"EASY GPRS\"";
@@ -706,6 +707,11 @@ static void execute_atcmd(uint16_t index, uint8_t *data_array, char *p_resp_str)
 
 		case APP_ATCMD_ACT_TEST :
 			switch (atcmd_get_test()) {
+				case 0 :
+				    for (i = 0; i < strlen(m_at); i++)
+						while (app_uart_put(m_at[i]) != NRF_SUCCESS);
+					while (app_uart_put('\r') != NRF_SUCCESS);
+				    break;
 				case 1 :
 				    for (i = 0; i < strlen(m_cgdcont); i++)
 						while (app_uart_put(m_cgdcont[i]) != NRF_SUCCESS);
